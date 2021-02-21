@@ -32,7 +32,7 @@ func main() {
 	}
 
 	for _, root := range args {
-		err := walk(root, &textPrinter{*verbose})
+		err := walk(root, textPrinter{*verbose})
 		if err != nil {
 			log.Printf("%s: %v", root, err)
 		}
@@ -48,24 +48,34 @@ type dependency struct {
 	info string
 }
 
+// A printer abstracts the rest of the program from the output layout.
+type printer interface {
+	printRootBin(bin string)
+	printDepBin(d *dependency)
+	printDep(from, to string)
+}
+
 // textPrinter prints dependencies like otool.
 type textPrinter struct{ verbose bool }
 
-func (p *textPrinter) printRoot(bin string) {
+func (p textPrinter) printRootBin(bin string) {
 	fmt.Printf("%s:\n", bin)
 }
 
-func (p *textPrinter) printDep(d *dependency) {
+func (p textPrinter) printDepBin(d *dependency) {
 	if p.verbose {
 		fmt.Printf("\t%s %s\n", d.bin, d.info)
 	} else {
 		fmt.Printf("\t%s\n", d.bin)
 	}
 }
+func (p textPrinter) printDep(from, to string) {
+	// nop
+}
 
 // walk traverses the graph of dependencies of the root binary in breadth-first
 // order and call printer for each one.
-func walk(root string, printer *textPrinter) error {
+func walk(root string, pt printer) error {
 	root, err := filepath.Abs(root)
 	if err != nil {
 		return fmt.Errorf("cannot get %q absolute path: %v", root, err)
@@ -82,13 +92,17 @@ func walk(root string, printer *textPrinter) error {
 		if !visited[d.bin] {
 			visited[d.bin] = true
 			if d.bin == root {
-				printer.printRoot(root)
+				pt.printRootBin(root)
 			} else {
-				printer.printDep(&d)
+				pt.printDepBin(&d)
 			}
+			i := len(toVisit)
 			toVisit, err = appendDirectDeps(toVisit, d.bin)
 			if err != nil {
 				return err
+			}
+			for _, dd := range toVisit[i:] {
+				pt.printDep(d.bin, dd.bin)
 			}
 		}
 	}
