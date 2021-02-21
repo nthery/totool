@@ -76,13 +76,9 @@ func walk(root string, printer printerFunc) error {
 	}
 
 	toVisit := make([]dependency, 0)
-	toVisit, err = appendDirectDeps(toVisit, root)
-	if err != nil {
-		return err
-	}
+	toVisit = append(toVisit, dependency{root, ""})
 
 	visited := make(map[string]bool)
-	visited[root] = true
 
 	fmt.Printf("%s:\n", root)
 	for len(toVisit) > 0 {
@@ -90,7 +86,9 @@ func walk(root string, printer printerFunc) error {
 		d, toVisit = toVisit[0], toVisit[1:]
 		if !visited[d.bin] {
 			visited[d.bin] = true
-			printer(&d)
+			if d.bin != root {
+				printer(&d)
+			}
 			toVisit, err = appendDirectDeps(toVisit, d.bin)
 			if err != nil {
 				return err
