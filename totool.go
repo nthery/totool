@@ -31,30 +31,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	var printer printerFunc
-	if *verbose {
-		printer = verbosePrinter
-	} else {
-		printer = tersePrinter
-	}
-
 	for _, root := range args {
-		err := walk(root, printer)
+		err := walk(root, &textPrinter{*verbose})
 		if err != nil {
 			log.Printf("%s: %v", root, err)
 		}
 	}
-}
-
-// printer is called for each dependency found to print it out.
-type printerFunc func(*dependency)
-
-func verbosePrinter(d *dependency) {
-	fmt.Printf("\t%s %s\n", d.bin, d.info)
-}
-
-func tersePrinter(d *dependency) {
-	fmt.Printf("\t%s\n", d.bin)
 }
 
 // dependency stores a single dependency found by otool.
@@ -66,10 +48,24 @@ type dependency struct {
 	info string
 }
 
+// textPrinter prints dependencies like otool.
+type textPrinter struct{ verbose bool }
+
+func (p *textPrinter) printRoot(bin string) {
+	fmt.Printf("%s:\n", bin)
+}
+
+func (p *textPrinter) printDep(d *dependency) {
+	if p.verbose {
+		fmt.Printf("\t%s %s\n", d.bin, d.info)
+	} else {
+		fmt.Printf("\t%s\n", d.bin)
+	}
+}
+
 // walk traverses the graph of dependencies of the root binary in breadth-first
 // order and call printer for each one.
-// If verbose is set, output extra per-dependency info.
-func walk(root string, printer printerFunc) error {
+func walk(root string, printer *textPrinter) error {
 	root, err := filepath.Abs(root)
 	if err != nil {
 		return fmt.Errorf("cannot get %q absolute path: %v", root, err)
@@ -80,14 +76,15 @@ func walk(root string, printer printerFunc) error {
 
 	visited := make(map[string]bool)
 
-	fmt.Printf("%s:\n", root)
 	for len(toVisit) > 0 {
 		var d dependency
 		d, toVisit = toVisit[0], toVisit[1:]
 		if !visited[d.bin] {
 			visited[d.bin] = true
-			if d.bin != root {
-				printer(&d)
+			if d.bin == root {
+				printer.printRoot(root)
+			} else {
+				printer.printDep(&d)
 			}
 			toVisit, err = appendDirectDeps(toVisit, d.bin)
 			if err != nil {
