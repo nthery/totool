@@ -20,6 +20,7 @@ func main() {
 	log.SetFlags(0)
 
 	verbose := flag.Bool("v", false, "output extra info")
+	dot := flag.Bool("dot", false, "generate dot output")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "usage: totool [flags] file...\n")
 		flag.PrintDefaults()
@@ -31,8 +32,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	var pt printer
+	if *dot {
+		pt = dotPrinter{}
+	} else {
+		pt = textPrinter{*verbose}
+	}
+
 	for _, root := range args {
-		err := walk(root, textPrinter{*verbose})
+		err := walk(root, pt)
 		if err != nil {
 			log.Printf("%s: %v", root, err)
 		}
@@ -50,27 +58,20 @@ type dependency struct {
 
 // A printer abstracts the rest of the program from the output layout.
 type printer interface {
+	// printPrologue is called before walking the dependency graph.
+	printPrologue()
+
+	// printRootBin is called to print the binary we want to print dependencies of.
 	printRootBin(bin string)
+
+	// printDepBin is called when walking into a new binary.
 	printDepBin(d *dependency)
+
+	// printDep is called to print a direct dependency between from and to binaries.
 	printDep(from, to string)
-}
 
-// textPrinter prints dependencies like otool.
-type textPrinter struct{ verbose bool }
-
-func (p textPrinter) printRootBin(bin string) {
-	fmt.Printf("%s:\n", bin)
-}
-
-func (p textPrinter) printDepBin(d *dependency) {
-	if p.verbose {
-		fmt.Printf("\t%s %s\n", d.bin, d.info)
-	} else {
-		fmt.Printf("\t%s\n", d.bin)
-	}
-}
-func (p textPrinter) printDep(from, to string) {
-	// nop
+	// printEpilogue is called after walking all nodes in the dependency graph.
+	printEpilogue()
 }
 
 // walk traverses the graph of dependencies of the root binary in breadth-first
@@ -81,28 +82,31 @@ func walk(root string, pt printer) error {
 		return fmt.Errorf("cannot get %q absolute path: %v", root, err)
 	}
 
+	pt.printPrologue()
+	defer pt.printEpilogue()
+
 	toVisit := make([]dependency, 0)
 	toVisit = append(toVisit, dependency{root, ""})
 
 	visited := make(map[string]bool)
 
 	for len(toVisit) > 0 {
-		var d dependency
-		d, toVisit = toVisit[0], toVisit[1:]
-		if !visited[d.bin] {
-			visited[d.bin] = true
-			if d.bin == root {
+		var from dependency
+		from, toVisit = toVisit[0], toVisit[1:]
+		if !visited[from.bin] {
+			visited[from.bin] = true
+			if from.bin == root {
 				pt.printRootBin(root)
 			} else {
-				pt.printDepBin(&d)
+				pt.printDepBin(&from)
 			}
 			i := len(toVisit)
-			toVisit, err = appendDirectDeps(toVisit, d.bin)
+			toVisit, err = appendDirectDeps(toVisit, from.bin)
 			if err != nil {
 				return err
 			}
-			for _, dd := range toVisit[i:] {
-				pt.printDep(d.bin, dd.bin)
+			for _, to := range toVisit[i:] {
+				pt.printDep(from.bin, to.bin)
 			}
 		}
 	}
