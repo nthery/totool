@@ -139,7 +139,13 @@ func appendDirectDeps(deps []dependency, bin string) ([]dependency, error) {
 		if len(sms) != 3 {
 			panic(fmt.Sprintf("unexpected otool output: %q, matched %v", s.Text(), sms))
 		}
-		deps = append(deps, dependency{resolveDepPath(bin, sms[1]), sms[2]})
+		depbin := resolveDepPath(bin, sms[1])
+		if depbin != bin {
+			deps = append(deps, dependency{depbin, sms[2]})
+		} else {
+			// The first dependency is the binary itself probably to display extra info about it.
+			// Filter it out to avoid displaying self-edges in the graph.
+		}
 	}
 
 	return deps, s.Err()
